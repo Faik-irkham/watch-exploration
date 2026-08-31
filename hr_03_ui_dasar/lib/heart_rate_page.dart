@@ -26,7 +26,6 @@ class _HeartRatePageState extends State<HeartRatePage> {
 
     _channel.receiveBroadcastStream().listen(
       (event) {
-        // Karena Kotlin mengirimkan Map, kita konversi dengan aman di sini
         final data = Map<String, dynamic>.from(event as Map);
         setState(() => _bpm = (data['bpm'] as num?)?.toDouble() ?? 0);
       },
