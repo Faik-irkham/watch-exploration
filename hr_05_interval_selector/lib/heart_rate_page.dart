@@ -31,18 +31,17 @@ class HeartRatePage extends StatelessWidget {
                   border: Border.all(color: const Color(0xFF00E5FF), width: 4),
                 ),
                 child: Center(
-                  // MENGGUNAKAN BLOCBUILDER
                   child: BlocBuilder<HeartRateCubit, HeartRateState>(
                     builder: (context, state) {
-                      // Cek state mana yang sedang aktif
                       if (state is HeartRateRunning) {
-                        return _buildRunningUI(state.bpm);
+                        return _buildRunningUI(state.bpm, state.interval);
                       } else if (state is HeartRateError) {
                         return _buildErrorUI(context, state.message);
+                      } else if (state is HeartRateInitial) {
+                        // Memasukkan interval yang sedang dipilih ke UI
+                        return _buildInitialUI(context, state.selectedInterval);
                       }
-
-                      // Default kembali ke Initial UI
-                      return _buildInitialUI(context);
+                      return const SizedBox();
                     },
                   ),
                 ),
@@ -54,26 +53,27 @@ class HeartRatePage extends StatelessWidget {
     );
   }
 
-  Widget _buildRunningUI(double bpm) {
+  Widget _buildRunningUI(double bpm, int interval) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Image.asset(
           'assets/heart_icon.png',
-          width: 80,
-          height: 80,
+          width: 50,
+          height: 50,
           fit: BoxFit.contain,
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
             Text(
-              bpm.toStringAsFixed(0),
+              // Jika BPM 0 tampilkan -- (loading), jika tidak tampilkan angka
+              bpm == 0 ? "--" : bpm.toStringAsFixed(0),
               style: const TextStyle(
-                fontSize: 42,
+                fontSize: 48,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
                 height: 1.0,
@@ -83,56 +83,106 @@ class HeartRatePage extends StatelessWidget {
             const Text(
               "Bpm",
               style: TextStyle(
-                fontSize: 18,
+                fontSize: 16,
                 fontWeight: FontWeight.normal,
                 color: Colors.white,
               ),
             ),
           ],
         ),
+        const SizedBox(height: 4),
+        Text(
+          bpm == 0 ? "Membaca sensor..." : "Update tiap $interval menit",
+          style: const TextStyle(fontSize: 10, color: Colors.white54),
+        ),
       ],
     );
   }
 
-  Widget _buildInitialUI(BuildContext context) {
+  Widget _buildInitialUI(BuildContext context, int currentInterval) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Image.asset(
+          "assets/heart_icon.png",
+          width: 40,
+          height: 40,
+          fit: BoxFit.contain,
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          "Pilih Interval:",
+          style: TextStyle(fontSize: 12, color: Colors.white70),
+        ),
+        const SizedBox(height: 4),
+        // Baris untuk opsi interval
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _intervalButton(context, 1, currentInterval),
+            const SizedBox(width: 8),
+            _intervalButton(context, 3, currentInterval),
+            const SizedBox(width: 8),
+            _intervalButton(context, 5, currentInterval),
+          ],
+        ),
+        const SizedBox(height: 16),
+        GestureDetector(
+          onTap: () => context.read<HeartRateCubit>().startSensor(),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00E5FF),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              "MULAI",
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.black, // Kontras dengan background cyan
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Widget custom untuk tombol angka 1, 3, 5
+  Widget _intervalButton(
+    BuildContext context,
+    int minutes,
+    int currentInterval,
+  ) {
+    final isSelected = minutes == currentInterval;
     return GestureDetector(
-      // Panggil event dari Cubit
-      onTap: () => context.read<HeartRateCubit>().startSensor(),
-      behavior: HitTestBehavior.opaque,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Image.asset(
-            "assets/heart_icon.png",
-            width: 80,
-            height: 80,
-            fit: BoxFit.contain,
+      onTap: () => context.read<HeartRateCubit>().setInterval(minutes),
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF0075FF) : Colors.transparent,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isSelected ? const Color(0xFF0075FF) : Colors.white54,
+            width: 2,
           ),
-          const SizedBox(height: 24),
-          const Text(
-            "Izinkan dan",
+        ),
+        child: Center(
+          child: Text(
+            "$minutes'",
             style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.normal,
+              fontSize: 14,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               color: Colors.white,
-              height: 1.2,
             ),
           ),
-          const Text(
-            "Mulai",
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-              height: 1.2,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  // Tambahan UI jika error (misal izin ditolak)
   Widget _buildErrorUI(BuildContext context, String message) {
     return GestureDetector(
       onTap: () => context.read<HeartRateCubit>().startSensor(),
@@ -142,12 +192,12 @@ class HeartRatePage extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, color: Colors.redAccent, size: 40),
+            const Icon(Icons.error_outline, color: Colors.redAccent, size: 30),
             const SizedBox(height: 8),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
+              style: const TextStyle(color: Colors.white, fontSize: 10),
             ),
             const SizedBox(height: 8),
             const Text(

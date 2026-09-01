@@ -11,13 +11,20 @@ import 'package:permission_handler/permission_handler.dart';
 part 'heart_rate_state.dart';
 
 class HeartRateCubit extends Cubit<HeartRateState> {
-  HeartRateCubit() : super(HeartRateInitial());
+  HeartRateCubit() : super(HeartRateInitial(selectedInterval: 1));
 
   static const _channel = EventChannel('heart_rate/stream');
   StreamSubscription? _subscription;
+  Timer? _intervalTimer;
+  int _selectedInterval = 1;
+
+  // Fungsi untuk mengubah pilihan interval dari UI
+  void setInterval(int minutes) {
+    _selectedInterval = minutes;
+    emit(HeartRateInitial(selectedInterval: _selectedInterval));
+  }
 
   Future<void> startSensor() async {
-    // 1. Meminta izin sensor
     final status = await Permission.sensors.request();
 
     if (!status.isGranted) {
@@ -25,38 +32,59 @@ class HeartRateCubit extends Cubit<HeartRateState> {
       return;
     }
 
-    // 2. Mengubah state menjadi running dengan nilai awal 0
-    emit(HeartRateRunning(0.0));
+    // Ubah status jadi running (BPM 0 berarti sedang memuat)
+    emit(HeartRateRunning(bpm: 0.0, interval: _selectedInterval));
 
-    // 3. Mulai mendengarkan stream dari Native (Kotlin/Java)
+    // Ambil data untuk pertama kali
+    _startReading();
+
+    // Jadwalkan pembacaan berulang sesuai interval
+    _intervalTimer = Timer.periodic(Duration(minutes: _selectedInterval), (
+      timer,
+    ) {
+      _startReading();
+    });
+  }
+
+  void _startReading() {
+    // Jika sensor masih aktif membaca, abaikan agar tidak dobel
+    if (_subscription != null) return;
+
     _subscription = _channel.receiveBroadcastStream().listen(
       (event) {
         final data = Map<String, dynamic>.from(event as Map);
         final currentBpm = (data['bpm'] as num?)?.toDouble() ?? 0.0;
         final accuracy = (data['accuracy'] as num?)?.toInt() ?? 0;
 
-        // Update state ke UI
-        emit(HeartRateRunning(currentBpm));
-
-        // Simpan ke database jika nilai BPM valid (> 0)
+        // Tunggu hingga sensor benar-benar mendeteksi detak jantung (>0)
         if (currentBpm > 0) {
+          // Update UI
+          emit(HeartRateRunning(bpm: currentBpm, interval: _selectedInterval));
+
+          // Simpan ke SQLite
           final reading = HearRateReading(
             bpm: currentBpm,
             accuracy: accuracy,
             time: DateTime.now(),
           );
           HeartRateDatabase.instance.insertReading(reading);
+
+          // PENTING: Hentikan sensor untuk menghemat baterai sampai interval berikutnya!
+          _subscription?.cancel();
+          _subscription = null;
         }
       },
       onError: (error) {
         emit(HeartRateError("Error dari sensor: $error"));
+        _subscription?.cancel();
+        _subscription = null;
       },
     );
   }
 
   @override
   Future<void> close() {
-    // Hentikan langganan stream saat cubit dihancurkan untuk mencegah memory leak
+    _intervalTimer?.cancel();
     _subscription?.cancel();
     return super.close();
   }
