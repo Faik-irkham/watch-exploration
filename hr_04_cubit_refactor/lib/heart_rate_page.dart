@@ -1,43 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
-class HeartRatePage extends StatefulWidget {
-  const new({super.key});
+import 'cubit/heart_rate_cubit.dart';
 
-  @override
-  State<HeartRatePage> createState() => _HeartRatePageState();
-}
-
-class _HeartRatePageState extends State<HeartRatePage> {
-  static const _channel = EventChannel('heart_rate/stream');
-  double _bpm = 0;
-  bool _running = false;
-
-  Future<void> _start() async {
-    final status = await Permission.sensors.request();
-
-    if (!status.isGranted) {
-      debugPrint("Izin sensor ditolak atau belum dikonfigurasi di Manifest.");
-      return;
-    }
-
-    setState(() => _running = true);
-
-    _channel.receiveBroadcastStream().listen(
-      (event) {
-        final data = Map<String, dynamic>.from(event as Map);
-        setState(() => _bpm = (data['bpm'] as num?)?.toDouble() ?? 0);
-      },
-      onError: (error) {
-        debugPrint("Error dari sensor: \$error");
-      },
-    );
-  }
+class HeartRatePage extends StatelessWidget {
+  const HeartRatePage({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF070C14),
       body: Center(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -48,15 +20,31 @@ class _HeartRatePageState extends State<HeartRatePage> {
             return Container(
               width: size,
               height: size,
-              decoration: BoxDecoration(shape: BoxShape.circle),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF0075FF), width: 6),
+              ),
               child: Container(
                 margin: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(color: Color(0xFF00E5FF), width: 4),
+                  border: Border.all(color: const Color(0xFF00E5FF), width: 4),
                 ),
                 child: Center(
-                  child: _running ? _buildRunningUI() : _buildInitialUI(),
+                  // MENGGUNAKAN BLOCBUILDER
+                  child: BlocBuilder<HeartRateCubit, HeartRateState>(
+                    builder: (context, state) {
+                      // Cek state mana yang sedang aktif
+                      if (state is HeartRateRunning) {
+                        return _buildRunningUI(state.bpm);
+                      } else if (state is HeartRateError) {
+                        return _buildErrorUI(context, state.message);
+                      }
+
+                      // Default kembali ke Initial UI
+                      return _buildInitialUI(context);
+                    },
+                  ),
                 ),
               ),
             );
@@ -66,10 +54,10 @@ class _HeartRatePageState extends State<HeartRatePage> {
     );
   }
 
-  Widget _buildRunningUI() {
+  Widget _buildRunningUI(double bpm) {
     return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const SizedBox(height: 12),
         Image.asset(
           'assets/heart_icon.png',
           width: 80,
@@ -83,8 +71,8 @@ class _HeartRatePageState extends State<HeartRatePage> {
           textBaseline: TextBaseline.alphabetic,
           children: [
             Text(
-              _bpm.toStringAsFixed(0),
-              style: TextStyle(
+              bpm.toStringAsFixed(0),
+              style: const TextStyle(
                 fontSize: 42,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
@@ -106,11 +94,13 @@ class _HeartRatePageState extends State<HeartRatePage> {
     );
   }
 
-  Widget _buildInitialUI() {
+  Widget _buildInitialUI(BuildContext context) {
     return GestureDetector(
-      onTap: _start,
+      // Panggil event dari Cubit
+      onTap: () => context.read<HeartRateCubit>().startSensor(),
       behavior: HitTestBehavior.opaque,
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Image.asset(
             "assets/heart_icon.png",
@@ -138,6 +128,34 @@ class _HeartRatePageState extends State<HeartRatePage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // Tambahan UI jika error (misal izin ditolak)
+  Widget _buildErrorUI(BuildContext context, String message) {
+    return GestureDetector(
+      onTap: () => context.read<HeartRateCubit>().startSensor(),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.redAccent, size: 40),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "Tap untuk coba lagi",
+              style: TextStyle(color: Colors.white70, fontSize: 10),
+            ),
+          ],
+        ),
       ),
     );
   }
