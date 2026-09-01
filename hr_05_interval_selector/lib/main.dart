@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:hr_05_interval_selector/cubit/heart_rate_cubit.dart';
 import 'package:hr_05_interval_selector/heart_rate_page.dart';
 
 void main() {
@@ -19,7 +21,10 @@ class MyApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: HeartRatePage(),
+      home: BlocProvider(
+        create: (context) => HeartRateCubit(),
+        child: const HeartRatePage(),
+      ),
     );
   }
 }
