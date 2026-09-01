@@ -21,16 +21,21 @@ class HeartRateDatabase {
       version: 1,
       onCreate: (db, version) async {
         await db.execute('''
-        CREATE TABLE $_table (
-        id INTEGER PRIMARY KEY AUTOINCREMENT
-        bpm REAL NOT NULL
-        accuracy INTEGER NOT NULL
-        time INTEGER NOT NULL
-        )
-''');
+          CREATE TABLE $_table (
+          id INTEGER PRIMARY KEY AUTOINCREMENT
+          bpm REAL NOT NULL
+          accuracy INTEGER NOT NULL
+          time INTEGER NOT NULL
+          )
+      ''');
       },
     );
     return _db!;
+  }
+
+  Future<void> insertReading(HearRateReading reading) async {
+    final db = await database;
+    await db.insert(_table, reading.toMap());
   }
 
   Future<List<HearRateReading>> getReadings() async {

@@ -43,15 +43,12 @@ class _HeartRatePageState extends State<HeartRatePage> {
           builder: (context, constraints) {
             double size = constraints.maxWidth < constraints.maxHeight
                 ? constraints.maxWidth
-                : constraints.minHeight;
+                : constraints.maxHeight;
 
             return Container(
               width: size,
               height: size,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF0075FF), width: 6),
-              ),
+              decoration: BoxDecoration(shape: BoxShape.circle),
               child: Container(
                 margin: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -72,13 +69,14 @@ class _HeartRatePageState extends State<HeartRatePage> {
   Widget _buildRunningUI() {
     return Column(
       children: [
+        const SizedBox(height: 12),
         Image.asset(
           'assets/heart_icon.png',
           width: 80,
           height: 80,
           fit: BoxFit.contain,
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 10),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -87,7 +85,7 @@ class _HeartRatePageState extends State<HeartRatePage> {
             Text(
               _bpm.toStringAsFixed(0),
               style: TextStyle(
-                fontSize: 64,
+                fontSize: 42,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
                 height: 1.0,
@@ -124,7 +122,7 @@ class _HeartRatePageState extends State<HeartRatePage> {
           const Text(
             "Izinkan dan",
             style: TextStyle(
-              fontSize: 28,
+              fontSize: 18,
               fontWeight: FontWeight.normal,
               color: Colors.white,
               height: 1.2,
@@ -133,7 +131,7 @@ class _HeartRatePageState extends State<HeartRatePage> {
           const Text(
             "Mulai",
             style: TextStyle(
-              fontSize: 42,
+              fontSize: 20,
               fontWeight: FontWeight.bold,
               color: Colors.white,
               height: 1.2,

@@ -18,7 +18,7 @@ class _HeartRatePageState extends State<HeartRatePage> {
     final status = await Permission.sensors.request();
 
     if (!status.isGranted) {
-      debugPrint("Iin sensor ditolak atau belum di konfigurasi di Manifest");
+      debugPrint("Izin sensor ditolak atau belum dikonfigurasi di Manifest.");
       return;
     }
 
@@ -39,15 +39,105 @@ class _HeartRatePageState extends State<HeartRatePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: _running
-            ? Text(
-                "${_bpm.toStringAsFixed(0)} BPM",
-                style: TextStyle(fontSize: 40),
-              )
-            : TextButton(
-                onPressed: _start,
-                child: const Text("Izinkan dan Mulai"),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            double size = constraints.maxWidth < constraints.maxHeight
+                ? constraints.maxWidth
+                : constraints.maxHeight;
+
+            return Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(shape: BoxShape.circle),
+              child: Container(
+                margin: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Color(0xFF00E5FF), width: 4),
+                ),
+                child: Center(
+                  child: _running ? _buildRunningUI() : _buildInitialUI(),
+                ),
               ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRunningUI() {
+    return Column(
+      children: [
+        const SizedBox(height: 12),
+        Image.asset(
+          'assets/heart_icon.png',
+          width: 80,
+          height: 80,
+          fit: BoxFit.contain,
+        ),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              _bpm.toStringAsFixed(0),
+              style: TextStyle(
+                fontSize: 42,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                height: 1.0,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Text(
+              "Bpm",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.normal,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInitialUI() {
+    return GestureDetector(
+      onTap: _start,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        children: [
+          Image.asset(
+            "assets/heart_icon.png",
+            width: 80,
+            height: 80,
+            fit: BoxFit.contain,
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            "Izinkan dan",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.normal,
+              color: Colors.white,
+              height: 1.2,
+            ),
+          ),
+          const Text(
+            "Mulai",
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+              height: 1.2,
+            ),
+          ),
+        ],
       ),
     );
   }

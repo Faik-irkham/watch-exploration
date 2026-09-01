@@ -14,7 +14,7 @@ class HearRateReading {
   Map<String, dynamic> toMap() => {
     'bpm': bpm,
     'accuracy': accuracy,
-    'time': time,
+    'time': time.millisecondsSinceEpoch,
   };
 
   factory HearRateReading.fromMap(Map<String, dynamic> map) {
