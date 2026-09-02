@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:hr_06_foreground_service/background_service.dart';
 import 'package:hr_06_foreground_service/cubit/heart_rate_cubit.dart';
 import 'package:hr_06_foreground_service/heart_rate_page.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializeService();
   runApp(const MyApp());
 }
 
