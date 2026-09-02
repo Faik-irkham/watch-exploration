@@ -22,9 +22,9 @@ class HeartRateDatabase {
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE $_table (
-          id INTEGER PRIMARY KEY AUTOINCREMENT
-          bpm REAL NOT NULL
-          accuracy INTEGER NOT NULL
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          bpm REAL NOT NULL,
+          accuracy INTEGER NOT NULL,
           time INTEGER NOT NULL
           )
       ''');

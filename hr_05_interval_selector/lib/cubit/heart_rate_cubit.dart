@@ -69,7 +69,7 @@ class HeartRateCubit extends Cubit<HeartRateState> {
           );
           HeartRateDatabase.instance.insertReading(reading);
 
-          // PENTING: Hentikan sensor untuk menghemat baterai sampai interval berikutnya!
+          //Hentikan sensor untuk menghemat baterai sampai interval berikutnya!
           _subscription?.cancel();
           _subscription = null;
         }
@@ -80,6 +80,14 @@ class HeartRateCubit extends Cubit<HeartRateState> {
         _subscription = null;
       },
     );
+  }
+
+  void stopSensor() {
+    _intervalTimer?.cancel();
+    _subscription?.cancel();
+    _subscription = null;
+
+    emit(HeartRateInitial(selectedInterval: _selectedInterval));
   }
 
   @override

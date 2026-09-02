@@ -34,7 +34,11 @@ class HeartRatePage extends StatelessWidget {
                   child: BlocBuilder<HeartRateCubit, HeartRateState>(
                     builder: (context, state) {
                       if (state is HeartRateRunning) {
-                        return _buildRunningUI(state.bpm, state.interval);
+                        return _buildRunningUI(
+                          context,
+                          state.bpm,
+                          state.interval,
+                        );
                       } else if (state is HeartRateError) {
                         return _buildErrorUI(context, state.message);
                       } else if (state is HeartRateInitial) {
@@ -53,17 +57,17 @@ class HeartRatePage extends StatelessWidget {
     );
   }
 
-  Widget _buildRunningUI(double bpm, int interval) {
+  Widget _buildRunningUI(BuildContext context, double bpm, int interval) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Image.asset(
           'assets/heart_icon.png',
-          width: 50,
-          height: 50,
+          width: 40,
+          height: 40,
           fit: BoxFit.contain,
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -73,7 +77,7 @@ class HeartRatePage extends StatelessWidget {
               // Jika BPM 0 tampilkan -- (loading), jika tidak tampilkan angka
               bpm == 0 ? "--" : bpm.toStringAsFixed(0),
               style: const TextStyle(
-                fontSize: 48,
+                fontSize: 40,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
                 height: 1.0,
@@ -83,7 +87,7 @@ class HeartRatePage extends StatelessWidget {
             const Text(
               "Bpm",
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 14,
                 fontWeight: FontWeight.normal,
                 color: Colors.white,
               ),
@@ -94,6 +98,27 @@ class HeartRatePage extends StatelessWidget {
         Text(
           bpm == 0 ? "Membaca sensor..." : "Update tiap $interval menit",
           style: const TextStyle(fontSize: 10, color: Colors.white54),
+        ),
+        const SizedBox(height: 4),
+
+        // TOMBOL BERHENTI
+        GestureDetector(
+          onTap: () => context.read<HeartRateCubit>().stopSensor(),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.redAccent,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              "BERHENTI",
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -109,24 +134,24 @@ class HeartRatePage extends StatelessWidget {
           height: 40,
           fit: BoxFit.contain,
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         const Text(
           "Pilih Interval:",
           style: TextStyle(fontSize: 12, color: Colors.white70),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         // Baris untuk opsi interval
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _intervalButton(context, 1, currentInterval),
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
             _intervalButton(context, 3, currentInterval),
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
             _intervalButton(context, 5, currentInterval),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 6),
         GestureDetector(
           onTap: () => context.read<HeartRateCubit>().startSensor(),
           child: Container(
@@ -140,7 +165,7 @@ class HeartRatePage extends StatelessWidget {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
-                color: Colors.black, // Kontras dengan background cyan
+                color: Colors.black,
               ),
             ),
           ),
