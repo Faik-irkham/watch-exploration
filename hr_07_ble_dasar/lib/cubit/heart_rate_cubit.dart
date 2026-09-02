@@ -25,8 +25,7 @@ class HeartRateCubit extends Cubit<HeartRateState> {
 
   Future<void> startSensor() async {
     final sensorStatus = await Permission.sensors.request();
-    final notifStatus = await Permission.notification
-        .request(); // Minta izin notifikasi
+    final notifStatus = await Permission.notification.request();
 
     if (!sensorStatus.isGranted) {
       emit(HeartRateError("Izin sensor ditolak."));
