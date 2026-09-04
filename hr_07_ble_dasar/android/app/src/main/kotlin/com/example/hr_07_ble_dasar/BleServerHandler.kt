@@ -29,7 +29,7 @@ class BleServerHandler(private val context: Context) : MethodChannel.MethodCallH
   // ==========================================
   private val SERVICE_UUID = UUID.fromString("12345678-1234-5678-1234-56789abcdef0")
   private val CHAR_UUID = UUID.fromString("abcdef01-1234-5678-1234-56789abcdef0")
-  
+
   // CCCD (Client Characteristic Configuration Descriptor)
   // Ini UUID standar wajib dari Bluetooth SIG agar perangkat lain bisa "Subscribe/Notify" data kita
   private val CCCD_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
@@ -121,7 +121,7 @@ class BleServerHandler(private val context: Context) : MethodChannel.MethodCallH
       hrCharacteristic?.let { char ->
           // Mengubah angka Integer menjadi ByteArray (format standar pengiriman data BLE)
           char.value = byteArrayOf(bpm.toByte()) 
-          
+
           // Beritahu (Notify) semua perangkat yang terhubung bahwa ada data baru
           for (device in connectedDevices) {
               gattServer?.notifyCharacteristicChanged(device, char, false)
