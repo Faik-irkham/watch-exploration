@@ -19,13 +19,13 @@ class BleServerHandler(private val context: Context) : MethodChannel.MethodCallH
   private val bluetoothAdapter = bluetoothManager.adapter
   private var advertiser = bluetoothAdapter?.bluetoothLeAdvertiser
   private var gattServer: BluetoothGattServer? = null
-  
+
   // Menyimpan daftar perangkat (HP/Treadmill) yang sedang terhubung ke jam
   private val connectedDevices = mutableSetOf<BluetoothDevice>()
   private var hrCharacteristic: BluetoothGattCharacteristic? = null
 
   // ==========================================
-  // TENTUKAN CUSTOM UUID ANDA DI SINI
+  // TENTUKAN CUSTOM UUID DI SINI
   // ==========================================
   private val SERVICE_UUID = UUID.fromString("12345678-1234-5678-1234-56789abcdef0")
   private val CHAR_UUID = UUID.fromString("abcdef01-1234-5678-1234-56789abcdef0")
@@ -34,7 +34,7 @@ class BleServerHandler(private val context: Context) : MethodChannel.MethodCallH
   // Ini UUID standar wajib dari Bluetooth SIG agar perangkat lain bisa "Subscribe/Notify" data kita
   private val CCCD_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
-  // CALLBACK UNTUK PENYIARAN (ADVERTISING)
+  // CALLBACK UNTUK ADVERTISING
   private val advertiseCallback = object : AdvertiseCallback() {
       override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
           Log.d("BLE_SERVER", "Berhasil memancarkan sinyal BLE (Advertising)!")
@@ -69,7 +69,7 @@ class BleServerHandler(private val context: Context) : MethodChannel.MethodCallH
       }
   }
 
-  // FUNGSI UNTUK MEMULAI SERVER & PEMANCAR
+  // FUNGSI UNTUK MEMULAI SERVER & ADVERTISING
   private fun startBroadcasting() {
       if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) return
 
