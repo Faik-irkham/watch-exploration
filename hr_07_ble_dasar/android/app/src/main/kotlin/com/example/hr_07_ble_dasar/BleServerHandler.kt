@@ -25,7 +25,7 @@ class BleServerHandler(private val context: Context) : MethodChannel.MethodCallH
   private var hrCharacteristic: BluetoothGattCharacteristic? = null
 
   // ==========================================
-  // TENTUKAN CUSTOM UUID DI SINI
+  // CUSTOM UUID
   // ==========================================
   private val SERVICE_UUID = UUID.fromString("12345678-1234-5678-1234-56789abcdef0")
   private val CHAR_UUID = UUID.fromString("abcdef01-1234-5678-1234-56789abcdef0")
@@ -71,42 +71,69 @@ class BleServerHandler(private val context: Context) : MethodChannel.MethodCallH
 
   // FUNGSI UNTUK MEMULAI SERVER & ADVERTISING
   private fun startBroadcasting() {
-      if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) return
+        // 1. Pastikan bluetoothAdapter tidak null dan Bluetooth dalam keadaan menyala
+        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
+            Log.e("BLE_SERVER", "Bluetooth mati atau tidak didukung perangkat.")
+            return
+        }
 
-      // 1. Bangun GATT Server
-      gattServer = bluetoothManager.openGattServer(context, gattServerCallback)
+        // 2. Bersihkan dulu jika server sebelumnya masih tersisa/aktif
+        try {
+            stopBroadcasting()
+        } catch (e: Exception) {
+            // Abaikan jika belum pernah diset
+        }
 
-      // 2. Siapkan Service & Characteristic (Ruang & Laci)
-      val service = BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
-      hrCharacteristic = BluetoothGattCharacteristic(
-          CHAR_UUID,
-          BluetoothGattCharacteristic.PROPERTY_READ or BluetoothGattCharacteristic.PROPERTY_NOTIFY,
-          BluetoothGattCharacteristic.PERMISSION_READ
-      )
+        // 3. Buka GATT Server dengan pengecekan aman
+        try {
+            gattServer = bluetoothManager.openGattServer(context, gattServerCallback)
+            if (gattServer == null) {
+                Log.e("BLE_SERVER", "Gagal membuka GATT Server (null)")
+                return
+            }
 
-      // Tambahkan Descriptor CCCD agar fitur Notify bekerja
-      val cccdDescriptor = BluetoothGattDescriptor(CCCD_UUID, BluetoothGattDescriptor.PERMISSION_WRITE or BluetoothGattDescriptor.PERMISSION_READ)
-      hrCharacteristic?.addDescriptor(cccdDescriptor)
+            // Siapkan Service & Characteristic
+            val service = BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
+            hrCharacteristic = BluetoothGattCharacteristic(
+                CHAR_UUID,
+                BluetoothGattCharacteristic.PROPERTY_READ or BluetoothGattCharacteristic.PROPERTY_NOTIFY,
+                BluetoothGattCharacteristic.PERMISSION_READ
+            )
 
-      service.addCharacteristic(hrCharacteristic)
-      gattServer?.addService(service)
+            val cccdDescriptor = BluetoothGattDescriptor(CCCD_UUID, BluetoothGattDescriptor.PERMISSION_WRITE or BluetoothGattDescriptor.PERMISSION_READ)
+            hrCharacteristic?.addDescriptor(cccdDescriptor)
 
-      // 3. Mulai Memancarkan Sinyal (Advertising)
-      val settings = AdvertiseSettings.Builder()
-          .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-          .setConnectable(true)
-          .setTimeout(0)
-          .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-          .build()
+            service.addCharacteristic(hrCharacteristic)
+            gattServer?.addService(service)
 
-      val data = AdvertiseData.Builder()
-          .setIncludeDeviceName(true)
-          .addServiceUuid(ParcelUuid(SERVICE_UUID))
-          .build()
+            // 4. Mulai Memancarkan Sinyal (Advertising)
+            val settings = AdvertiseSettings.Builder()
+                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+                .setConnectable(true)
+                .setTimeout(0)
+                .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+                .build()
 
-      advertiser = bluetoothAdapter.bluetoothLeAdvertiser
-      advertiser?.startAdvertising(settings, data, advertiseCallback)
-  }
+            val data = AdvertiseData.Builder()
+                .setIncludeDeviceName(true)
+                .addServiceUuid(ParcelUuid(SERVICE_UUID))
+                .build()
+
+            advertiser = bluetoothAdapter?.bluetoothLeAdvertiser
+            if (advertiser == null) {
+                Log.e("BLE_SERVER", "Perangkat ini tidak mendukung BLE Advertiser!")
+                return
+            }
+            
+            advertiser?.startAdvertising(settings, data, advertiseCallback)
+            Log.d("BLE_SERVER", "Perintah startAdvertising berhasil dikirim.")
+
+        } catch (e: SecurityException) {
+            Log.e("BLE_SERVER", "Izin Bluetooth ditolak di level sistem: ${e.message}")
+        } catch (e: Exception) {
+            Log.e("BLE_SERVER", "Error tidak dikenal saat startBroadcasting: ${e.message}")
+        }
+    }
 
   // FUNGSI MENGHENTIKAN SERVER
   private fun stopBroadcasting() {

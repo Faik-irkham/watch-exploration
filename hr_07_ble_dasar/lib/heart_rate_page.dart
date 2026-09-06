@@ -11,63 +11,50 @@ class HeartRatePage extends StatelessWidget {
   Widget build(BuildContext context) {
     // 2. BLOC LISTENER: Bertugas "mendengarkan" saat ada detak jantung baru
     // lalu melempar angkanya ke BleServerCubit untuk dipancarkan
-    return BlocListener<HeartRateCubit, HeartRateState>(
-      listener: (context, state) {
-        if (state is HeartRateRunning && state.bpm > 0) {
-          context.read<BleServerCubit>().updateBpm(state.bpm.toInt());
-        }
-      },
-      child: Scaffold(
-        backgroundColor: const Color(0xFF070C14),
-        body: Center(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              double size = constraints.maxWidth < constraints.maxHeight
-                  ? constraints.maxWidth
-                  : constraints.maxHeight;
+    return Scaffold(
+      backgroundColor: const Color(0xFF070C14),
+      body: Center(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            double size = constraints.maxWidth < constraints.maxHeight
+                ? constraints.maxWidth
+                : constraints.maxHeight;
 
-              return Container(
-                width: size,
-                height: size,
+            return Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF0075FF), width: 6),
+              ),
+              child: Container(
+                margin: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFF0075FF), width: 6),
+                  border: Border.all(color: const Color(0xFF00E5FF), width: 4),
                 ),
-                child: Container(
-                  margin: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0xFF00E5FF),
-                      width: 4,
-                    ),
-                  ),
-                  child: Center(
-                    child: BlocBuilder<HeartRateCubit, HeartRateState>(
-                      builder: (context, state) {
-                        if (state is HeartRateRunning) {
-                          return _buildRunningUI(
-                            context,
-                            state.bpm,
-                            state.interval,
-                          );
-                        } else if (state is HeartRateError) {
-                          return _buildErrorUI(context, state.message);
-                        } else if (state is HeartRateInitial) {
-                          // Memasukkan interval yang sedang dipilih ke UI
-                          return _buildInitialUI(
-                            context,
-                            state.selectedInterval,
-                          );
-                        }
-                        return const SizedBox();
-                      },
-                    ),
+                child: Center(
+                  child: BlocBuilder<HeartRateCubit, HeartRateState>(
+                    builder: (context, state) {
+                      if (state is HeartRateRunning) {
+                        return _buildRunningUI(
+                          context,
+                          state.bpm,
+                          state.interval,
+                        );
+                      } else if (state is HeartRateError) {
+                        return _buildErrorUI(context, state.message);
+                      } else if (state is HeartRateInitial) {
+                        // Memasukkan interval yang sedang dipilih ke UI
+                        return _buildInitialUI(context, state.selectedInterval);
+                      }
+                      return const SizedBox();
+                    },
                   ),
                 ),
-              );
-            },
-          ),
+              ),
+            );
+          },
         ),
       ),
     );
