@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 
@@ -79,5 +81,55 @@ class HrDatabase {
   Future<void> clearReadings() async {
     final db = await database;
     await db.delete(_table);
+  }
+
+  /// Menulis seluruh isi tabel ke satu berkas CSV di penyimpanan privat
+  /// aplikasi, lalu mengembalikan path lengkapnya.
+  ///
+  /// Sengaja tidak memakai `path_provider` supaya tidak menambah dependensi:
+  /// sqflite sudah tahu letak folder basis data, dan induk folder itu adalah
+  /// folder data aplikasi. Berkasnya diambil dengan:
+  ///
+  /// ```
+  ///   adb shell "run-as com.example.hr_08_ble_dasar_phone \
+  ///     cat exports/<nama>.csv" > phone.csv
+  /// ```
+  ///
+  /// Kolom `time_millis` sengaja ditaruh paling depan dan ditulis apa adanya.
+  /// Nilainya berasal dari jam watch, jadi angka itulah yang dipasangkan
+  /// dengan kolom bernama sama pada ekspor dari watch. `time_local` hanya
+  /// untuk dibaca manusia dan tidak boleh dipakai sebagai kunci.
+  Future<String> exportCsv() async {
+    final readings = await getReadings();
+
+    final exportDir = Directory(
+      p.join(p.dirname(await getDatabasesPath()), 'exports'),
+    );
+    if (!exportDir.existsSync()) {
+      exportDir.createSync(recursive: true);
+    }
+
+    final file = File(p.join(exportDir.path, 'hr_08_readings_${_stamp()}.csv'));
+
+    final buffer = StringBuffer()..writeln('time_millis,time_local,bpm');
+    // getReadings() mengurutkan menurun; dibalik supaya CSV urut naik dan
+    // mudah disandingkan baris per baris dengan ekspor dari watch.
+    for (final r in readings.reversed) {
+      buffer.writeln(
+        '${r.time.millisecondsSinceEpoch},'
+        '${r.time.toIso8601String()},'
+        '${r.bpm}',
+      );
+    }
+
+    await file.writeAsString(buffer.toString(), flush: true);
+    return file.path;
+  }
+
+  String _stamp() {
+    final now = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${now.year}${two(now.month)}${two(now.day)}'
+        '_${two(now.hour)}${two(now.minute)}${two(now.second)}';
   }
 }

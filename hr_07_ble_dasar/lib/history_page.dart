@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import 'heart_rate_database.dart';
 import 'models/heart_rate_reading.dart';
@@ -13,6 +14,7 @@ class HistoryPage extends StatefulWidget {
 class _HistoryPageState extends State<HistoryPage> {
   List<HearRateReading> _readings = [];
   bool _loading = true;
+  bool _exporting = false;
 
   @override
   void initState() {
@@ -28,6 +30,35 @@ class _HistoryPageState extends State<HistoryPage> {
       _readings = data;
       _loading = false;
     });
+  }
+
+  Future<void> _export() async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      final path = await HeartRateDatabase.instance.exportCsv();
+      // Path lengkapnya terlalu panjang untuk layar jam; yang utuh ke logcat.
+      debugPrint('CSV riwayat diekspor ke: $path');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Tersimpan: ${p.basename(path)}',
+            style: const TextStyle(fontSize: 10),
+          ),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal ekspor: $e', style: const TextStyle(fontSize: 10)),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
   }
 
   void _handleSwipe(DragEndDetails details) {
@@ -56,13 +87,46 @@ class _HistoryPageState extends State<HistoryPage> {
           child: Column(
             children: [
               const SizedBox(height: 4),
-              const Text(
-                "Riwayat Detak Jantung",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    "Riwayat Detak Jantung",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  // Ukuran dan padding dipangkas habis: di layar bulat, tinggi
+                  // baris judul ikut memakan ruang daftar di bawahnya.
+                  IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 20,
+                      minHeight: 20,
+                    ),
+                    tooltip: "Ekspor CSV",
+                    onPressed: _readings.isEmpty || _exporting ? null : _export,
+                    icon: _exporting
+                        ? const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                              color: Color(0xFF00E5FF),
+                            ),
+                          )
+                        : Icon(
+                            Icons.save_alt,
+                            size: 14,
+                            color: _readings.isEmpty
+                                ? Colors.white24
+                                : const Color(0xFF00E5FF),
+                          ),
+                  ),
+                ],
               ),
               const SizedBox(height: 6),
               Expanded(

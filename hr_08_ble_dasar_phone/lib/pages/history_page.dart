@@ -13,6 +13,7 @@ class HistoryPage extends StatefulWidget {
 class _HistoryPageState extends State<HistoryPage> {
   List<HeartRateReading> _readings = [];
   bool _loading = true;
+  bool _exporting = false;
 
   @override
   void initState() {
@@ -28,6 +29,37 @@ class _HistoryPageState extends State<HistoryPage> {
       _readings = data;
       _loading = false;
     });
+  }
+
+  Future<void> _export() async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      final path = await HrDatabase.instance.exportCsv();
+      if (!mounted) return;
+      // Path lengkap ditampilkan utuh dan bisa diseleksi, karena inilah yang
+      // dibutuhkan untuk menariknya keluar lewat adb.
+      showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text("CSV tersimpan"),
+          content: SelectableText(path, style: const TextStyle(fontSize: 12)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Tutup"),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Gagal ekspor: $e")));
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
   }
 
   Future<void> _clearAll() async {
@@ -66,7 +98,19 @@ class _HistoryPageState extends State<HistoryPage> {
         title: const Text("Riwayat Detak Jantung"),
         actions: [
           IconButton(
+            icon: _exporting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save_alt),
+            tooltip: "Ekspor CSV",
+            onPressed: _readings.isEmpty || _exporting ? null : _export,
+          ),
+          IconButton(
             icon: const Icon(Icons.delete_outline),
+            tooltip: "Hapus semua",
             onPressed: _readings.isEmpty ? null : _clearAll,
           ),
         ],
