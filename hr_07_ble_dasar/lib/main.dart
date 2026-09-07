@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hr_07_ble_dasar/cubit/ble_server_cubit.dart';
 import 'package:hr_07_ble_dasar/cubit/heart_rate_cubit.dart';
-import 'package:hr_07_ble_dasar/root_shell.dart';
+import 'package:hr_07_ble_dasar/heart_rate_page.dart';
 
-void main() async {
+void main() {
   runApp(const MyApp());
 }
 
@@ -26,7 +26,7 @@ class MyApp extends StatelessWidget {
           BlocProvider(create: (context) => HeartRateCubit()),
           BlocProvider(create: (context) => BleServerCubit()),
         ],
-        child: const RootShell(),
+        child: const HeartRatePage(),
       ),
     );
   }

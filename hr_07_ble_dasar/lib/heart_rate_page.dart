@@ -1,77 +1,123 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'cubit/heart_rate_cubit.dart';
 import 'cubit/ble_server_cubit.dart';
+import 'history_page.dart';
 
 class HeartRatePage extends StatelessWidget {
   const HeartRatePage({super.key});
 
-  @override
-  Widget build(BuildContext context) {
-    // 2. BLOC LISTENER: Bertugas "mendengarkan" saat ada detak jantung baru
-    // lalu melempar angkanya ke BleServerCubit untuk dipancarkan
-    return Scaffold(
-      backgroundColor: const Color(0xFF070C14),
-      body: Center(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            double size = constraints.maxWidth < constraints.maxHeight
-                ? constraints.maxWidth
-                : constraints.maxHeight;
+  void _handleSwipe(BuildContext context, DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    const threshold = 200.0;
 
-            return Container(
-              width: size,
-              height: size,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF0075FF), width: 6),
-              ),
-              child: Container(
-                margin: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFF00E5FF), width: 4),
-                ),
-                child: Center(
-                  child: BlocBuilder<HeartRateCubit, HeartRateState>(
-                    builder: (context, state) {
-                      if (state is HeartRateRunning) {
-                        return _buildRunningUI(
-                          context,
-                          state.bpm,
-                          state.interval,
-                        );
-                      } else if (state is HeartRateError) {
-                        return _buildErrorUI(context, state.message);
-                      } else if (state is HeartRateInitial) {
-                        // Memasukkan interval yang sedang dipilih ke UI
-                        return _buildInitialUI(context, state.selectedInterval);
-                      }
-                      return const SizedBox();
-                    },
-                  ),
-                ),
-              ),
+    if (velocity <= -threshold) {
+      SystemNavigator.pop();
+    } else if (velocity >= threshold) {
+      Navigator.of(context).push(
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              const HistoryPage(),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(1, 0),
+                end: Offset.zero,
+              ).animate(animation),
+              child: child,
             );
           },
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF070C14),
+      body: GestureDetector(
+        onHorizontalDragEnd: (details) => _handleSwipe(context, details),
+        behavior: HitTestBehavior.translucent,
+        child: Stack(
+          children: [
+            Center(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  double size = constraints.maxWidth < constraints.maxHeight
+                      ? constraints.maxWidth
+                      : constraints.maxHeight;
+
+                  return Container(
+                    width: size,
+                    height: size,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFF0075FF),
+                        width: 6,
+                      ),
+                    ),
+                    child: Container(
+                      margin: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFF00E5FF),
+                          width: 4,
+                        ),
+                      ),
+                      child: Center(
+                        child: BlocBuilder<HeartRateCubit, HeartRateState>(
+                          builder: (context, state) {
+                            if (state is HeartRateRunning) {
+                              return _buildRunningUI(context, state);
+                            } else if (state is HeartRateError) {
+                              return _buildErrorUI(context, state.message);
+                            } else if (state is HeartRateInitial) {
+                              return _buildInitialUI(
+                                context,
+                                state.selectedInterval,
+                              );
+                            }
+                            return const SizedBox();
+                          },
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildRunningUI(BuildContext context, double bpm, int interval) {
+  String _formatCountdown(int totalSeconds) {
+    final safeSeconds = totalSeconds < 0 ? 0 : totalSeconds;
+    final m = (safeSeconds ~/ 60).toString().padLeft(2, '0');
+    final s = (safeSeconds % 60).toString().padLeft(2, '0');
+    return "$m:$s";
+  }
+
+  Widget _buildRunningUI(BuildContext context, HeartRateRunning state) {
+    final bpm = state.bpm;
+    final interval = state.interval;
+
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // 3. INDIKATOR BLE: Menambahkan ikon Bluetooth di sebelah ikon jantung
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Image.asset(
               'assets/heart_icon.png',
-              width: 32, // Sedikit dikecilkan agar muat dengan ikon Bluetooth
-              height: 32,
+              width: 28,
+              height: 28,
               fit: BoxFit.contain,
             ),
             const SizedBox(width: 8),
@@ -79,8 +125,7 @@ class HeartRatePage extends StatelessWidget {
               builder: (context, bleState) {
                 return Icon(
                   Icons.bluetooth_connected,
-                  size: 20,
-                  // Ikon menyala biru jika BLE aktif memancar, redup jika tidak
+                  size: 18,
                   color: bleState is BleServerBroadcasting
                       ? const Color(0xFF00E5FF)
                       : Colors.white24,
@@ -96,10 +141,9 @@ class HeartRatePage extends StatelessWidget {
           textBaseline: TextBaseline.alphabetic,
           children: [
             Text(
-              // Jika BPM 0 tampilkan -- (loading), jika tidak tampilkan angka
               bpm == 0 ? "--" : bpm.toStringAsFixed(0),
               style: const TextStyle(
-                fontSize: 40,
+                fontSize: 30,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
                 height: 1.0,
@@ -121,9 +165,16 @@ class HeartRatePage extends StatelessWidget {
           bpm == 0 ? "Membaca sensor..." : "Update tiap $interval menit",
           style: const TextStyle(fontSize: 10, color: Colors.white54),
         ),
-        const SizedBox(height: 4),
-
-        // 4. TOMBOL BERHENTI: Matikan sensor DAN matikan pancaran BLE
+        const SizedBox(height: 2),
+        Text(
+          "Berikutnya dalam ${_formatCountdown(state.secondsUntilNext)}",
+          style: const TextStyle(
+            fontSize: 11,
+            color: Color(0xFF00E5FF),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
         GestureDetector(
           onTap: () {
             context.read<HeartRateCubit>().stopSensor();
@@ -165,7 +216,6 @@ class HeartRatePage extends StatelessWidget {
           style: TextStyle(fontSize: 12, color: Colors.white70),
         ),
         const SizedBox(height: 2),
-        // Baris untuk opsi interval
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -177,8 +227,6 @@ class HeartRatePage extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-
-        // 5. TOMBOL MULAI: Nyalakan sensor DAN nyalakan pancaran BLE
         GestureDetector(
           onTap: () {
             context.read<HeartRateCubit>().startSensor();
@@ -204,7 +252,6 @@ class HeartRatePage extends StatelessWidget {
     );
   }
 
-  // Widget custom untuk tombol angka 1, 3, 5
   Widget _intervalButton(
     BuildContext context,
     int minutes,
@@ -240,7 +287,6 @@ class HeartRatePage extends StatelessWidget {
 
   Widget _buildErrorUI(BuildContext context, String message) {
     return GestureDetector(
-      // 6. TOMBOL ERROR: Saat diklik ulang, coba hidupkan keduanya lagi
       onTap: () {
         context.read<HeartRateCubit>().startSensor();
         context.read<BleServerCubit>().startBroadcasting();
