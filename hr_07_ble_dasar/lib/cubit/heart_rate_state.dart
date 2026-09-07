@@ -13,8 +13,13 @@ final class HeartRateInitial extends HeartRateState {
 final class HeartRateRunning extends HeartRateState {
   final double bpm;
   final int interval;
+  final int secondsUntilNext;
 
-  HeartRateRunning({required this.bpm, required this.interval});
+  HeartRateRunning({
+    required this.bpm,
+    required this.interval,
+    this.secondsUntilNext = 0,
+  });
 }
 
 final class HeartRateError extends HeartRateState {

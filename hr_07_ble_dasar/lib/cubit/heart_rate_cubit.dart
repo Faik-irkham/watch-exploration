@@ -13,22 +13,52 @@ class HeartRateCubit extends Cubit<HeartRateState> {
   }
 
   int _selectedInterval = 1;
+  int _secondsRemaining = 0;
   StreamSubscription? _subscription;
+  Timer? _countdownTimer;
 
   void _onServiceEvent(Map<String, dynamic> event) {
     switch (event['type']) {
       case 'bpm':
+        final interval = (event['interval'] as num).toInt();
+        _secondsRemaining = interval * 60;
         emit(
           HeartRateRunning(
             bpm: (event['bpm'] as num).toDouble(),
-            interval: (event['interval'] as num).toInt(),
+            interval: interval,
+            secondsUntilNext: _secondsRemaining,
           ),
         );
+        _restartCountdown(interval);
         break;
       case 'sensor_error':
         emit(HeartRateError(event['message'] as String? ?? 'Sensor error'));
         break;
     }
+  }
+
+  void _restartCountdown(int interval) {
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_secondsRemaining > 0) {
+        _secondsRemaining--;
+      } else {
+        // Jaga-jaga kalau bacaan berikutnya telat datang dari native,
+        // countdown tetap berputar mengikuti panjang interval.
+        _secondsRemaining = interval * 60;
+      }
+
+      final current = state;
+      if (current is HeartRateRunning) {
+        emit(
+          HeartRateRunning(
+            bpm: current.bpm,
+            interval: current.interval,
+            secondsUntilNext: _secondsRemaining,
+          ),
+        );
+      }
+    });
   }
 
   void setInterval(int minutes) {
@@ -51,11 +81,17 @@ class HeartRateCubit extends Cubit<HeartRateState> {
       return;
     }
 
-    emit(HeartRateRunning(bpm: 0.0, interval: _selectedInterval));
+    _secondsRemaining = _selectedInterval * 60;
+    emit(
+      HeartRateRunning(
+        bpm: 0.0,
+        interval: _selectedInterval,
+        secondsUntilNext: _secondsRemaining,
+      ),
+    );
+    _restartCountdown(_selectedInterval);
 
     try {
-      // Satu perintah ini menyalakan foreground service native yang
-      // menangani sensor DAN BLE sekaligus.
       await HeartRateServiceBridge.start(_selectedInterval);
     } catch (e) {
       emit(HeartRateError("Gagal memulai layanan: $e"));
@@ -63,12 +99,14 @@ class HeartRateCubit extends Cubit<HeartRateState> {
   }
 
   void stopSensor() {
+    _countdownTimer?.cancel();
     HeartRateServiceBridge.stop();
     emit(HeartRateInitial(selectedInterval: _selectedInterval));
   }
 
   @override
   Future<void> close() {
+    _countdownTimer?.cancel();
     _subscription?.cancel();
     return super.close();
   }
