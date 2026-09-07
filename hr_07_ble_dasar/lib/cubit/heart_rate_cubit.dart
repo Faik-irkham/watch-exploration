@@ -1,29 +1,34 @@
 import 'dart:async';
 
 import 'package:bloc/bloc.dart';
+import 'package:hr_07_ble_dasar/native_bridge/heart_rate_service_bridge.dart';
 import 'package:meta/meta.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:flutter_background_service/flutter_background_service.dart';
 
 part 'heart_rate_state.dart';
 
 class HeartRateCubit extends Cubit<HeartRateState> {
   HeartRateCubit() : super(HeartRateInitial(selectedInterval: 1)) {
-    _listenToBackgroundService();
+    _subscription = HeartRateServiceBridge.updates.listen(_onServiceEvent);
   }
 
   int _selectedInterval = 1;
-  StreamSubscription? _uiSubscription;
+  StreamSubscription? _subscription;
 
-  // Mendengarkan update angka dari Background Service
-  void _listenToBackgroundService() {
-    _uiSubscription = FlutterBackgroundService().on('updateUI').listen((event) {
-      if (event != null) {
-        final bpm = (event['bpm'] as num).toDouble();
-        final interval = (event['interval'] as num).toInt();
-        emit(HeartRateRunning(bpm: bpm, interval: interval));
-      }
-    });
+  void _onServiceEvent(Map<String, dynamic> event) {
+    switch (event['type']) {
+      case 'bpm':
+        emit(
+          HeartRateRunning(
+            bpm: (event['bpm'] as num).toDouble(),
+            interval: (event['interval'] as num).toInt(),
+          ),
+        );
+        break;
+      case 'sensor_error':
+        emit(HeartRateError(event['message'] as String? ?? 'Sensor error'));
+        break;
+    }
   }
 
   void setInterval(int minutes) {
@@ -32,7 +37,6 @@ class HeartRateCubit extends Cubit<HeartRateState> {
   }
 
   Future<void> startSensor() async {
-    // Minta semua izin yang dibutuhkan sekaligus di sini
     final statuses = await [
       Permission.sensors,
       Permission.notification,
@@ -49,23 +53,23 @@ class HeartRateCubit extends Cubit<HeartRateState> {
 
     emit(HeartRateRunning(bpm: 0.0, interval: _selectedInterval));
 
-    final service = FlutterBackgroundService();
-    if (!(await service.isRunning())) {
-      await service.startService();
+    try {
+      // Satu perintah ini menyalakan foreground service native yang
+      // menangani sensor DAN BLE sekaligus.
+      await HeartRateServiceBridge.start(_selectedInterval);
+    } catch (e) {
+      emit(HeartRateError("Gagal memulai layanan: $e"));
     }
-
-    service.invoke('setStart', {'interval': _selectedInterval});
   }
 
   void stopSensor() {
-    // Perintahkan background service untuk berhenti
-    FlutterBackgroundService().invoke('setStop');
+    HeartRateServiceBridge.stop();
     emit(HeartRateInitial(selectedInterval: _selectedInterval));
   }
 
   @override
   Future<void> close() {
-    _uiSubscription?.cancel();
+    _subscription?.cancel();
     return super.close();
   }
 }

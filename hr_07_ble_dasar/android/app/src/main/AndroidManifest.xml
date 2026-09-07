@@ -16,6 +16,7 @@
     
 
     <!-- Izin BARU untuk Foreground Service & Notifikasi -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- Menandakan service ini berhubungan dengan kesehatan/sensor tubuh -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" /> 
@@ -57,10 +58,9 @@
             </intent-filter>
         </activity>
         <service
-            android:name="id.flutter.flutter_background_service.BackgroundService"
+            android:name=".HeartRateBleService"
             android:foregroundServiceType="health|connectedDevice"
-            android:exported="true"
-            tools:replace="android:foregroundServiceType,android:exported"/>
+            android:exported="false" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
