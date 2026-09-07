@@ -24,6 +24,12 @@
 
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Detak interval dijadwalkan lewat AlarmManager RTC_WAKEUP supaya CPU
+         benar-benar dibangunkan saat layar mati / Doze. Izin ini tidak
+         diberikan otomatis pada targetSdk 34; kalau ditolak, service jatuh
+         ke setAndAllowWhileIdle() yang tetap menembus Doze meski kurang presisi. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
     <!-- Menandai aplikasi sebagai aplikasi jam tangan (Wear OS) -->
     <uses-feature android:name="android.hardware.type.watch"/>
     <!-- Menandakan aplikasi butuh Bluetooth LE dan Sensor Detak Jantung -->
