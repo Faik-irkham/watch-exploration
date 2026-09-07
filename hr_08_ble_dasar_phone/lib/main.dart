@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:hr_08_ble_dasar_phone/hr_receiver_page.dart';
+
+import 'pages/hr_receiver_page.dart';
 
 void main() {
   runApp(const ReceiverApp());

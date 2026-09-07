@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.example.hr_08_ble_dasar_phone"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
