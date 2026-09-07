@@ -23,9 +23,16 @@ enum ConnectionStatus {
 /// UI (HrReceiverPage) cukup "mendengarkan" objek ini lewat ChangeNotifier,
 /// tidak perlu tahu detail BLE sama sekali.
 ///
-/// Kontrak dengan app jam tangan: watch mengirim TEPAT SATU notify per
-/// interval. Jadi satu notify yang diterima di sini = satu baris di
-/// database, tidak boleh lebih dan tidak boleh terlewat.
+/// Kontrak dengan app jam tangan (protokol v2): watch mengirim TEPAT SATU
+/// notify per interval, dan tiap notify membawa cap waktu bacaan itu diukur
+/// DI JAM. Satu notify yang diterima di sini = satu baris di database.
+///
+/// Tidak ada pengiriman ulang: bacaan yang terjadi saat ponsel tidak
+/// terhubung tidak akan pernah menyusul lewat BLE, dan hanya tersimpan di
+/// SQLite jam. Melengkapinya adalah pekerjaan rekonsiliasi terpisah yang
+/// membandingkan isi kedua basis data — dan justru untuk itulah waktu ukur
+/// ikut dikirim serta disimpan apa adanya di sini. Kalau yang dicatat waktu
+/// TERIMA, kolom `time` di kedua sisi tidak akan pernah bisa dipasangkan.
 class HeartRateBleController extends ChangeNotifier {
   ConnectionStatus status = ConnectionStatus.idle;
   String statusMessage = "Menyiapkan...";
@@ -34,6 +41,12 @@ class HeartRateBleController extends ChangeNotifier {
   /// Kapan bacaan terakhir masuk. Dipakai UI supaya kelihatan bedanya
   /// antara "terhubung tapi belum waktunya kirim" dan "terhubung tapi macet".
   DateTime? lastReceivedAt;
+
+  /// Kapan bacaan terakhir DIUKUR menurut jam. Inilah nilai yang masuk ke
+  /// database dan yang dipakai saat menyamakan isinya dengan SQLite jam.
+  DateTime? lastReadingTime;
+
+  String _deviceLabel = "";
 
   BluetoothDevice? _device;
   StreamSubscription<BluetoothAdapterState>? _adapterSub;
@@ -141,7 +154,8 @@ class HeartRateBleController extends ChangeNotifier {
 
     await _stopScan();
     _device = device;
-    _setStatus(ConnectionStatus.connecting, "Menyambungkan ke ${_label(device)}...");
+    _deviceLabel = _label(device);
+    _setStatus(ConnectionStatus.connecting, "Menyambungkan ke $_deviceLabel...");
 
     try {
       await device.connect(
@@ -195,42 +209,56 @@ class HeartRateBleController extends ChangeNotifier {
       return;
     }
 
-    await target.setNotifyValue(true);
-
     await _valueSub?.cancel();
     // Sengaja pakai onValueReceived, BUKAN lastValueStream. lastValueStream
     // me-re-emit nilai cache lama begitu di-listen
     // (bluetooth_characteristic.dart:94), sehingga tiap reconnect akan
-    // menyimpan ulang bacaan interval sebelumnya sebagai baris baru.
-    // onValueReceived hanya menyala saat notify betulan datang, jadi
-    // 1 notify = 1 baris.
-    _valueSub = target.onValueReceived.listen((value) {
-      if (value.isEmpty) return;
-      // Payload watch: 1 byte unsigned (lihat BleGattServerManager.updateBpm).
-      final reading = value[0] & 0xFF;
-      if (reading <= 0) return;
+    // memproses ulang bacaan sebelumnya. onValueReceived hanya menyala saat
+    // notify betulan datang.
+    _valueSub = target.onValueReceived.listen(_onPacketReceived);
 
-      bpm = reading;
-      lastReceivedAt = DateTime.now();
-      notifyListeners();
-
-      unawaited(
-        HrDatabase.instance.insertReading(
-          HeartRateReading(bpm: reading, time: DateTime.now()),
-        ),
-      );
-    });
+    await target.setNotifyValue(true);
 
     _setStatus(
       ConnectionStatus.connected,
-      "Terhubung ke ${_label(device)}. Menunggu kiriman berikutnya...",
+      "Terhubung ke $_deviceLabel. Menunggu kiriman berikutnya...",
     );
+  }
+
+  /// Satu notify = satu bacaan.
+  Future<void> _onPacketReceived(List<int> value) async {
+    final packet = HeartRatePacket.parse(value);
+    if (packet == null) {
+      final version = HeartRatePacket.versionOf(value);
+      _setStatus(
+        ConnectionStatus.error,
+        "Payload tidak dikenali (versi ${version ?? '?'}, ${value.length} byte). "
+        "Pastikan app jam tangan sudah memakai protokol v$heartRateProtocolVersion.",
+      );
+      return;
+    }
+
+    lastReceivedAt = DateTime.now();
+    bpm = packet.bpm;
+    lastReadingTime = packet.time;
+
+    // Waktu yang disimpan berasal dari JAM, bukan dari DateTime.now() di
+    // sini. Selisihnya memang kecil pada kiriman langsung, tetapi kolom
+    // `time` di kedua basis data harus berisi angka yang sama persis supaya
+    // bisa dipasangkan saat rekonsiliasi.
+    await HrDatabase.instance.insertReading(
+      HeartRateReading(bpm: packet.bpm, time: packet.time),
+    );
+    if (_disposed) return;
+
+    _setStatus(ConnectionStatus.connected, "Terhubung ke $_deviceLabel.");
   }
 
   void _onDisconnected() {
     _valueSub?.cancel();
     _valueSub = null;
     bpm = null;
+    lastReadingTime = null;
 
     // Kalau kita memang sudah sedang mencari ulang, jangan tumpuk scan lagi.
     if (_disposed || status == ConnectionStatus.scanning) return;

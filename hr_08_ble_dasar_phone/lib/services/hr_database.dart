@@ -10,6 +10,9 @@ class HrDatabase {
   static const _dbName = 'hr_receiver.db';
   static const _table = 'readings';
 
+  /// Versi 2 menambahkan indeks UNIQUE pada kolom `time`.
+  static const _dbVersion = 2;
+
   Database? _db;
 
   Future<Database> get database async {
@@ -19,7 +22,7 @@ class HrDatabase {
 
     _db = await openDatabase(
       path,
-      version: 1,
+      version: _dbVersion,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE $_table (
@@ -28,14 +31,43 @@ class HrDatabase {
             time INTEGER NOT NULL
           )
         ''');
+        await _createTimeIndex(db);
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          // Baris versi 1 memakai waktu TERIMA, bukan waktu ukur, sehingga
+          // bisa ada dua baris berwaktu sama. Indeks UNIQUE menolak dibuat
+          // kalau duplikat itu masih ada, jadi disapu dulu — yang disimpan
+          // baris dengan id terkecil.
+          await db.execute('''
+            DELETE FROM $_table
+            WHERE id NOT IN (SELECT MIN(id) FROM $_table GROUP BY time)
+          ''');
+          await _createTimeIndex(db);
+        }
       },
     );
     return _db!;
   }
 
-  Future<void> insertReading(HeartRateReading reading) async {
+  /// Penangkal duplikat, dan alasan kenapa jam boleh mengirim ulang bacaan
+  /// yang tidak yakin sudah sampai: kiriman kedua ditolak indeks ini, bukan
+  /// menjadi baris kembar.
+  Future<void> _createTimeIndex(Database db) => db.execute(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_readings_time ON $_table (time)',
+  );
+
+  /// @return true kalau baris ini memang baru; false kalau waktunya sudah
+  /// pernah tercatat dan kiriman tersebut diabaikan.
+  Future<bool> insertReading(HeartRateReading reading) async {
     final db = await database;
-    await db.insert(_table, reading.toMap());
+    final id = await db.insert(
+      _table,
+      reading.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+    // ConflictAlgorithm.ignore mengembalikan 0 kalau barisnya ditolak.
+    return id != 0;
   }
 
   Future<List<HeartRateReading>> getReadings() async {

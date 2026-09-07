@@ -14,10 +14,26 @@ import java.util.concurrent.CopyOnWriteArraySet
 /**
  * Logika GATT Server + Advertising BLE
  *
- * Kontrak dengan app phone (hr_08): SATU notify per interval, dikirim
- * tepat saat bacaan valid didapat. Tidak ada pengiriman ulang dan tidak
- * ada antrean — kalau saat itu tidak ada phone yang subscribe, bacaan
+ * KONTRAK DENGAN APP PHONE (hr_08) — PROTOKOL v2
+ *
+ * Payload notify berukuran tetap 10 byte, big-endian:
+ *
+ *   byte [0]     versi protokol (saat ini 2)
+ *   byte [1]     bpm, unsigned 0..255
+ *   byte [2..9]  waktu bacaan diambil DI JAM, epoch milidetik (Int64)
+ *
+ * 10 byte muat dalam batas ATT bawaan (MTU 23 -> 20 byte payload), jadi
+ * tidak perlu negosiasi MTU.
+ *
+ * Pengiriman tetap SATU notify per interval, dikirim tepat saat bacaan
+ * valid didapat. Tidak ada pengiriman ulang, tidak ada antrean, dan tidak
+ * ada tanda terima — kalau saat itu tidak ada phone yang subscribe, bacaan
  * tersebut hanya tersimpan di SQLite watch.
+ *
+ * Yang menutup lubang itu bukan protokolnya, melainkan langkah rekonsiliasi
+ * belakangan: karena tiap bacaan membawa waktu ukurnya sendiri, isi SQLite
+ * jam dan SQLite ponsel bisa disamakan dengan `time` sebagai kunci.
+ * Itulah alasan waktu ikut dikirim meski pengirimannya sekali tembak.
  */
 
 @SuppressLint("MissingPermission")
@@ -28,6 +44,10 @@ class BleGattServerManager(private val context: Context) {
     val SERVICE_UUID: UUID = UUID.fromString("12345678-1234-5678-1234-56789abcdef0")
     val CHAR_UUID: UUID = UUID.fromString("abcdef01-1234-5678-1234-56789abcdef0")
     val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+
+    /** Dinaikkan setiap kali susunan payload berubah; dicek ponsel. */
+    const val PROTOCOL_VERSION = 2
+    private const val PAYLOAD_SIZE = 10
   }
 
   private val bluetoothManager =
@@ -43,8 +63,8 @@ class BleGattServerManager(private val context: Context) {
   // ConcurrentModificationException tepat saat notify sedang berjalan.
   private val subscribedDevices = CopyOnWriteArraySet<BluetoothDevice>()
 
-  /** Bacaan terakhir, hanya untuk melayani request READ / debugging (nRF Connect). */
-  @Volatile private var lastBpm: Int = 0
+  /** Payload terakhir, hanya untuk melayani request READ / debugging (nRF Connect). */
+  @Volatile private var lastRecord: ByteArray = encode(0, 0L)
 
   private val advertiseCallback = object : AdvertiseCallback() {
     override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
@@ -92,8 +112,7 @@ class BleGattServerManager(private val context: Context) {
         gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, 0, null)
         return
       }
-      val payload = byteArrayOf(lastBpm.coerceIn(0, 255).toByte())
-      gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, payload)
+      gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, lastRecord)
     }
 
     override fun onDescriptorReadRequest(
@@ -221,27 +240,27 @@ class BleGattServerManager(private val context: Context) {
   }
 
   /**
-   * Kirim 1 nilai bpm ke semua perangkat yang sedang subscribe.
+   * Kirim 1 bacaan ke semua perangkat yang sedang subscribe.
    * Dipanggil tepat sekali per interval dari HeartRateBleService.
    *
+   * @param timeMillis waktu bacaan itu DIUKUR, bukan waktu ia dikirim.
+   *        Keduanya nyaris sama di sini, tetapi yang disimpan ponsel harus
+   *        waktu ukur supaya kedua basis data bisa disamakan belakangan.
    * @return true kalau notify terkirim ke minimal satu perangkat.
    */
-  fun updateBpm(bpm: Int): Boolean {
-    val clamped = bpm.coerceIn(0, 255)
-    lastBpm = clamped
+  fun updateBpm(bpm: Int, timeMillis: Long): Boolean {
+    val payload = encode(bpm, timeMillis)
+    lastRecord = payload
 
     val char = hrCharacteristic ?: return false
     val server = gattServer ?: return false
 
     if (subscribedDevices.isEmpty()) {
-        Log.d(TAG, "Tidak ada phone yang subscribe, bpm $clamped hanya disimpan lokal.")
+        Log.d(TAG, "Tidak ada phone yang subscribe, bpm $bpm hanya disimpan lokal.")
         return false
     }
 
-    // Payload custom ini 1 byte unsigned (0..255) — cukup untuk bpm
-    // wajar. Sisi penerima WAJIB baca sebagai unsigned:
-    // value[0].toInt() and 0xFF
-    char.value = byteArrayOf(clamped.toByte())
+    char.value = payload
 
     var delivered = false
     for (device in subscribedDevices) {
@@ -254,7 +273,18 @@ class BleGattServerManager(private val context: Context) {
             subscribedDevices.remove(device)
         }
     }
-    Log.d(TAG, "Kirim bpm $clamped ke ${subscribedDevices.size} device, sukses=$delivered")
+    Log.d(TAG, "Kirim bpm $bpm ke ${subscribedDevices.size} device, sukses=$delivered")
     return delivered
+  }
+
+  /** Susunan payload v2; lihat dokumentasi kelas. */
+  private fun encode(bpm: Int, timeMillis: Long): ByteArray {
+    val out = ByteArray(PAYLOAD_SIZE)
+    out[0] = PROTOCOL_VERSION.toByte()
+    out[1] = bpm.coerceIn(0, 255).toByte()
+    for (i in 0 until 8) {
+      out[2 + i] = ((timeMillis shr (8 * (7 - i))) and 0xFF).toByte()
+    }
+    return out
   }
 }

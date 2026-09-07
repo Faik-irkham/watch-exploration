@@ -28,7 +28,15 @@ class _HrReceiverPageState extends State<HrReceiverPage> {
 
   String _formatTime(DateTime t) {
     String two(int v) => v.toString().padLeft(2, '0');
-    return "${two(t.hour)}:${two(t.minute)}:${two(t.second)}";
+    final clock = "${two(t.hour)}:${two(t.minute)}:${two(t.second)}";
+    final today = DateTime.now();
+    final sameDay =
+        t.year == today.year && t.month == today.month && t.day == today.day;
+    // Waktu yang ditampilkan berasal dari jam, bukan dari ponsel. Kalau
+    // jam sempat mati lalu menyala lagi dengan tanggal berbeda, selisihnya
+    // harus kelihatan — karena itu tanggal ikut ditampilkan bila bukan
+    // hari ini.
+    return sameDay ? clock : "${two(t.day)}/${two(t.month)} $clock";
   }
 
   Color _statusColor(ConnectionStatus status) {
@@ -91,11 +99,16 @@ class _HrReceiverPageState extends State<HrReceiverPage> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  _controller.lastReceivedAt == null
+                  _controller.lastReadingTime == null
                       ? "Belum ada kiriman masuk"
-                      : "Kiriman terakhir: ${_formatTime(_controller.lastReceivedAt!)}",
+                      : "Diukur jam ${_formatTime(_controller.lastReadingTime!)}",
                   style: const TextStyle(fontSize: 12, color: Colors.white38),
                 ),
+                if (_controller.lastReceivedAt != null)
+                  Text(
+                    "Diterima ${_formatTime(_controller.lastReceivedAt!)}",
+                    style: const TextStyle(fontSize: 11, color: Colors.white24),
+                  ),
                 const SizedBox(height: 32),
                 if (_controller.status == ConnectionStatus.bluetoothOff)
                   ElevatedButton(

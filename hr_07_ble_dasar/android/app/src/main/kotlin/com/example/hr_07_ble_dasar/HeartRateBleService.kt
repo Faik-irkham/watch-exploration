@@ -77,6 +77,23 @@ class HeartRateBleService : Service(), SensorEventListener {
     private const val PREFS_NAME = "heart_rate_session"
     private const val KEY_ACTIVE = "session_active"
     private const val KEY_INTERVAL = "session_interval"
+
+    // --- Dibaca dari luar service (BootReceiver tidak punya instance-nya) ---
+
+    fun hasSavedSession(context: Context): Boolean =
+      context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getBoolean(KEY_ACTIVE, false)
+
+    fun savedInterval(context: Context): Int =
+      context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getInt(KEY_INTERVAL, 1).coerceAtLeast(1)
+
+    /** Intent siap pakai untuk menyalakan sesi dari luar service. */
+    fun startIntent(context: Context, intervalMinutes: Int): Intent =
+      Intent(context, HeartRateBleService::class.java).apply {
+        action = ACTION_START
+        putExtra(EXTRA_INTERVAL_MINUTES, intervalMinutes)
+      }
   }
 
   private val mainHandler = Handler(Looper.getMainLooper())
@@ -369,7 +386,9 @@ class HeartRateBleService : Service(), SensorEventListener {
     val now = System.currentTimeMillis()
     dbHelper.insertReading(bpm.toDouble(), accuracy, now)
     // Satu-satunya titik pengiriman BLE: tepat 1 notify per interval.
-    val sent = bleManager.updateBpm(bpm.toInt())
+    // `now` ikut dikirim supaya baris di ponsel memakai waktu UKUR, bukan
+    // waktu terima — itulah kunci yang menyamakan kedua basis data nanti.
+    val sent = bleManager.updateBpm(bpm.toInt(), now)
     LiveUpdateBridge.emitBpm(bpm.toDouble(), intervalMinutes)
     if (!sent) {
       LiveUpdateBridge.emitBleStatus(
