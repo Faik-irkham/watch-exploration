@@ -26,6 +26,11 @@ class _HrReceiverPageState extends State<HrReceiverPage> {
     super.dispose();
   }
 
+  String _formatTime(DateTime t) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return "${two(t.hour)}:${two(t.minute)}:${two(t.second)}";
+  }
+
   Color _statusColor(ConnectionStatus status) {
     switch (status) {
       case ConnectionStatus.connected:
@@ -83,6 +88,13 @@ class _HrReceiverPageState extends State<HrReceiverPage> {
                 const Text(
                   "BPM",
                   style: TextStyle(fontSize: 16, color: Colors.white54),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _controller.lastReceivedAt == null
+                      ? "Belum ada kiriman masuk"
+                      : "Kiriman terakhir: ${_formatTime(_controller.lastReceivedAt!)}",
+                  style: const TextStyle(fontSize: 12, color: Colors.white38),
                 ),
                 const SizedBox(height: 32),
                 if (_controller.status == ConnectionStatus.bluetoothOff)

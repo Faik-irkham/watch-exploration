@@ -9,10 +9,15 @@ import android.content.Context
 import android.os.ParcelUuid
 import android.util.Log
 import java.util.UUID
+import java.util.concurrent.CopyOnWriteArraySet
 
 /**
  * Logika GATT Server + Advertising BLE
- * 
+ *
+ * Kontrak dengan app phone (hr_08): SATU notify per interval, dikirim
+ * tepat saat bacaan valid didapat. Tidak ada pengiriman ulang dan tidak
+ * ada antrean — kalau saat itu tidak ada phone yang subscribe, bacaan
+ * tersebut hanya tersimpan di SQLite watch.
  */
 
 @SuppressLint("MissingPermission")
@@ -32,7 +37,14 @@ class BleGattServerManager(private val context: Context) {
   private var advertiser = bluetoothAdapter?.bluetoothLeAdvertiser
   private var gattServer: BluetoothGattServer? = null
   private var hrCharacteristic: BluetoothGattCharacteristic? = null
-  private val connectedDevices = mutableSetOf<BluetoothDevice>()
+
+  // Diakses dari Binder thread (callback GATT) DAN main thread (updateBpm),
+  // jadi wajib koleksi yang aman-thread. Set biasa bisa melempar
+  // ConcurrentModificationException tepat saat notify sedang berjalan.
+  private val subscribedDevices = CopyOnWriteArraySet<BluetoothDevice>()
+
+  /** Bacaan terakhir, hanya untuk melayani request READ / debugging (nRF Connect). */
+  @Volatile private var lastBpm: Int = 0
 
   private val advertiseCallback = object : AdvertiseCallback() {
     override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
@@ -46,11 +58,57 @@ class BleGattServerManager(private val context: Context) {
   }
 
   private val gattServerCallback = object : BluetoothGattServerCallback() {
+    /**
+     * addService() itu asinkron. Advertising baru boleh mulai di sini,
+     * setelah service benar-benar terdaftar — kalau tidak, phone bisa
+     * connect lalu discoverServices() duluan dan tidak menemukan
+     * characteristic apa pun.
+     */
+    override fun onServiceAdded(status: Int, service: BluetoothGattService?) {
+      if (status != BluetoothGatt.GATT_SUCCESS) {
+        Log.e(TAG, "Gagal menambah GATT service: $status")
+        LiveUpdateBridge.emitBleStatus("error", "Gagal mendaftarkan GATT service (kode $status)")
+        return
+      }
+      startAdvertising()
+    }
+
     override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
-      if (newState == BluetoothProfile.STATE_CONNECTED) {
-          connectedDevices.add(device)
-      } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-          connectedDevices.remove(device)
+      if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+          // Subscribe dilepas saat putus; phone harus tulis CCCD lagi
+          // setelah reconnect supaya terdaftar kembali.
+          subscribedDevices.remove(device)
+          Log.d(TAG, "Device terputus: ${device.address}")
+      }
+    }
+
+    override fun onCharacteristicReadRequest(
+      device: BluetoothDevice, requestId: Int, offset: Int,
+      characteristic: BluetoothGattCharacteristic
+    ) {
+      // Characteristic dideklarasikan PROPERTY_READ, jadi request READ
+      // wajib dijawab. Tanpa handler ini request-nya menggantung sampai timeout.
+      if (characteristic.uuid != CHAR_UUID) {
+        gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, 0, null)
+        return
+      }
+      val payload = byteArrayOf(lastBpm.coerceIn(0, 255).toByte())
+      gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, payload)
+    }
+
+    override fun onDescriptorReadRequest(
+      device: BluetoothDevice, requestId: Int, offset: Int,
+      descriptor: BluetoothGattDescriptor
+    ) {
+      if (descriptor.uuid == CCCD_UUID) {
+        val value = if (subscribedDevices.contains(device)) {
+          BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+        } else {
+          BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
+        }
+        gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value)
+      } else {
+        gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, 0, null)
       }
     }
 
@@ -58,8 +116,22 @@ class BleGattServerManager(private val context: Context) {
       device: BluetoothDevice, requestId: Int, descriptor: BluetoothGattDescriptor,
       preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray?
     ) {
-      if (descriptor.uuid == CCCD_UUID && responseNeeded) {
+      if (descriptor.uuid == CCCD_UUID) {
+        // Catat siapa yang benar-benar subscribe, jangan asal broadcast ke
+        // semua yang terhubung.
+        val enabled = value != null &&
+            value.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+        if (enabled) {
+          subscribedDevices.add(device)
+          Log.d(TAG, "Device subscribe notify: ${device.address}")
+        } else {
+          subscribedDevices.remove(device)
+        }
+        if (responseNeeded) {
           gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
+        }
+      } else if (responseNeeded) {
+        gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, 0, null)
       }
     }
   }
@@ -93,28 +165,10 @@ class BleGattServerManager(private val context: Context) {
             )
         )
         service.addCharacteristic(characteristic)
-        server.addService(service)
         hrCharacteristic = characteristic
 
-        val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-            .setConnectable(true)
-            .setTimeout(0)
-            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-            .build()
-
-        val data = AdvertiseData.Builder()
-            .addServiceUuid(ParcelUuid(SERVICE_UUID))
-            .build()
-
-        val currentAdvertiser = bluetoothAdapter.bluetoothLeAdvertiser
-        advertiser = currentAdvertiser
-        if (currentAdvertiser == null) {
-            LiveUpdateBridge.emitBleStatus("error", "Perangkat tidak mendukung BLE Advertiser")
-            return false
-        }
-
-        currentAdvertiser.startAdvertising(settings, data, advertiseCallback)
+        // Advertising menyusul di onServiceAdded(), bukan di sini.
+        server.addService(service)
         true
     } catch (e: SecurityException) {
         LiveUpdateBridge.emitBleStatus("error", "Izin Bluetooth ditolak: ${e.message}")
@@ -122,6 +176,32 @@ class BleGattServerManager(private val context: Context) {
     } catch (e: Exception) {
         LiveUpdateBridge.emitBleStatus("error", "Error BLE: ${e.message}")
         false
+    }
+  }
+
+  private fun startAdvertising() {
+    val settings = AdvertiseSettings.Builder()
+        .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+        .setConnectable(true)
+        .setTimeout(0)
+        .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+        .build()
+
+    val data = AdvertiseData.Builder()
+        .addServiceUuid(ParcelUuid(SERVICE_UUID))
+        .build()
+
+    val currentAdvertiser = bluetoothAdapter?.bluetoothLeAdvertiser
+    advertiser = currentAdvertiser
+    if (currentAdvertiser == null) {
+        LiveUpdateBridge.emitBleStatus("error", "Perangkat tidak mendukung BLE Advertiser")
+        return
+    }
+
+    try {
+        currentAdvertiser.startAdvertising(settings, data, advertiseCallback)
+    } catch (e: Exception) {
+        LiveUpdateBridge.emitBleStatus("error", "Gagal memulai advertising: ${e.message}")
     }
   }
 
@@ -133,23 +213,48 @@ class BleGattServerManager(private val context: Context) {
     } catch (e: Exception) {
         Log.e(TAG, "Error saat stop(): ${e.message}")
     } finally {
-        connectedDevices.clear()
+        subscribedDevices.clear()
         gattServer = null
         hrCharacteristic = null
         LiveUpdateBridge.emitBleStatus("stopped")
     }
   }
 
-  /** Kirim 1 nilai bpm baru ke semua perangkat yang sedang subscribe. */
-  fun updateBpm(bpm: Int) {
-    val char = hrCharacteristic ?: return
+  /**
+   * Kirim 1 nilai bpm ke semua perangkat yang sedang subscribe.
+   * Dipanggil tepat sekali per interval dari HeartRateBleService.
+   *
+   * @return true kalau notify terkirim ke minimal satu perangkat.
+   */
+  fun updateBpm(bpm: Int): Boolean {
+    val clamped = bpm.coerceIn(0, 255)
+    lastBpm = clamped
+
+    val char = hrCharacteristic ?: return false
+    val server = gattServer ?: return false
+
+    if (subscribedDevices.isEmpty()) {
+        Log.d(TAG, "Tidak ada phone yang subscribe, bpm $clamped hanya disimpan lokal.")
+        return false
+    }
+
     // Payload custom ini 1 byte unsigned (0..255) — cukup untuk bpm
     // wajar. Sisi penerima WAJIB baca sebagai unsigned:
     // value[0].toInt() and 0xFF
-    val clamped = bpm.coerceIn(0, 255)
     char.value = byteArrayOf(clamped.toByte())
-    for (device in connectedDevices) {
-        gattServer?.notifyCharacteristicChanged(device, char, false)
+
+    var delivered = false
+    for (device in subscribedDevices) {
+        try {
+            if (server.notifyCharacteristicChanged(device, char, false)) {
+                delivered = true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Gagal notify ke ${device.address}: ${e.message}")
+            subscribedDevices.remove(device)
+        }
     }
+    Log.d(TAG, "Kirim bpm $clamped ke ${subscribedDevices.size} device, sukses=$delivered")
+    return delivered
   }
 }

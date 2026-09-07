@@ -54,10 +54,34 @@ class HeartRateBleService : Service(), SensorEventListener {
   private var isListeningToSensor = false
   private var isSessionActive = false
 
+  /**
+   * Batas waktu menunggu SATU bacaan valid dalam satu interval. Sensor
+   * detak jantung sering mengembalikan accuracy 0 saat jam masih longgar
+   * atau baru dipakai; kalau ditunggu tanpa batas, listener-nya nyangkut
+   * sampai interval berikutnya sehingga interval itu ikut kosong (dan
+   * baterai terkuras). Lewat batas ini sensor dilepas dan interval
+   * tersebut dinyatakan gagal secara eksplisit.
+   */
+  private fun sensorWindowMs(): Long =
+    minOf(30_000L, intervalMinutes * 60_000L / 2)
+
+  private val sensorTimeout = Runnable {
+    if (isListeningToSensor) {
+      sensorManager.unregisterListener(this)
+      isListeningToSensor = false
+      LiveUpdateBridge.emitSensorError(
+        "Tidak dapat bacaan valid dalam ${sensorWindowMs() / 1000} detik. " +
+        "Interval ini dilewati - pastikan jam menempel pas di pergelangan."
+      )
+    }
+  }
+
   private val periodicTick = object : Runnable {
     override fun run() {
-      readOnce()
+      // Jadwalkan tick berikutnya DULU supaya jarak antar interval tetap
+      // presisi, tidak ikut molor mengikuti lamanya sensor menyala.
       mainHandler.postDelayed(this, intervalMinutes * 60_000L)
+      readOnce()
     }
   }
 
@@ -107,6 +131,7 @@ class HeartRateBleService : Service(), SensorEventListener {
   private fun stopSession() {
     isSessionActive = false
     mainHandler.removeCallbacks(periodicTick)
+    mainHandler.removeCallbacks(sensorTimeout)
     if(isListeningToSensor) {
       sensorManager.unregisterListener(this)
       isListeningToSensor = false
@@ -118,13 +143,22 @@ class HeartRateBleService : Service(), SensorEventListener {
 
   private fun readOnce() {
     val sensor = heartRateSensor ?: return
-    if(isListeningToSensor) return
+    // Sisa listener dari interval sebelumnya dibersihkan dulu, supaya satu
+    // interval tidak pernah "kehilangan giliran" gara-gara nyangkut.
+    if(isListeningToSensor) {
+      mainHandler.removeCallbacks(sensorTimeout)
+      sensorManager.unregisterListener(this)
+      isListeningToSensor = false
+    }
+
     isListeningToSensor = sensorManager.registerListener(
       this, sensor, SensorManager.SENSOR_DELAY_NORMAL
     )
     if(!isListeningToSensor) {
       LiveUpdateBridge.emitSensorError ("Gagal mengaktifkan sensor. Pastikan izin Sensor tubuh diizinkan dan mode hemat daya mati.")
+      return
     }
+    mainHandler.postDelayed(sensorTimeout, sensorWindowMs())
   }
 
   override fun onSensorChanged(event: SensorEvent?) {
@@ -137,13 +171,21 @@ class HeartRateBleService : Service(), SensorEventListener {
     if (bpm <= 0f || accuracy <= 0) return
 
     // Cukup 1 bacaan valid per interval → lepas listener sekarang.
+    mainHandler.removeCallbacks(sensorTimeout)
     sensorManager.unregisterListener(this)
     isListeningToSensor = false
 
     val now = System.currentTimeMillis()
     dbHelper.insertReading(bpm.toDouble(), accuracy, now)
-    bleManager.updateBpm(bpm.toInt())
+    // Satu-satunya titik pengiriman BLE: tepat 1 notify per interval.
+    val sent = bleManager.updateBpm(bpm.toInt())
     LiveUpdateBridge.emitBpm(bpm.toDouble(), intervalMinutes)
+    if (!sent) {
+      LiveUpdateBridge.emitBleStatus(
+        "broadcasting",
+        "Belum ada phone yang subscribe. Bacaan disimpan di jam saja."
+      )
+    }
   }
 
   override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
@@ -176,6 +218,7 @@ class HeartRateBleService : Service(), SensorEventListener {
 
   override fun onDestroy() {
       mainHandler.removeCallbacks(periodicTick)
+      mainHandler.removeCallbacks(sensorTimeout)
       if (isListeningToSensor) sensorManager.unregisterListener(this)
       bleManager.stop()
       super.onDestroy()
