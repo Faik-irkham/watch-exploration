@@ -226,7 +226,7 @@ class HeartRateBleController extends ChangeNotifier {
   }
 
   /// Satu notify = satu bacaan.
-  Future<void> _onPacketReceived(List<int> value) async {
+  void _onPacketReceived(List<int> value) {
     final packet = HeartRatePacket.parse(value);
     if (packet == null) {
       final version = HeartRatePacket.versionOf(value);
@@ -241,17 +241,19 @@ class HeartRateBleController extends ChangeNotifier {
     lastReceivedAt = DateTime.now();
     bpm = packet.bpm;
     lastReadingTime = packet.time;
+    // UI diperbarui lebih dulu supaya angka terasa muncul seketika; menulis
+    // SQLite butuh beberapa milidetik dan layar tidak perlu menunggunya.
+    _setStatus(ConnectionStatus.connected, "Terhubung ke $_deviceLabel.");
 
     // Waktu yang disimpan berasal dari JAM, bukan dari DateTime.now() di
     // sini. Selisihnya memang kecil pada kiriman langsung, tetapi kolom
     // `time` di kedua basis data harus berisi angka yang sama persis supaya
     // bisa dipasangkan saat rekonsiliasi.
-    await HrDatabase.instance.insertReading(
-      HeartRateReading(bpm: packet.bpm, time: packet.time),
+    unawaited(
+      HrDatabase.instance.insertReading(
+        HeartRateReading(bpm: packet.bpm, time: packet.time),
+      ),
     );
-    if (_disposed) return;
-
-    _setStatus(ConnectionStatus.connected, "Terhubung ke $_deviceLabel.");
   }
 
   void _onDisconnected() {
