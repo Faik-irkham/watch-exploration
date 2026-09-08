@@ -102,8 +102,7 @@ class HeartRateBleController extends ChangeNotifier {
     try {
       await FlutterBluePlus.turnOn();
     } catch (e) {
-      statusMessage =
-          "Tidak bisa menyalakan otomatis. Nyalakan manual dari Quick Settings, lalu buka lagi app ini.";
+      statusMessage = "Tidak bisa menyalakan otomatis. Nyalakan manual dari Quick Settings, lalu buka lagi app ini.";
       notifyListeners();
     }
   }
@@ -155,7 +154,10 @@ class HeartRateBleController extends ChangeNotifier {
     await _stopScan();
     _device = device;
     _deviceLabel = _label(device);
-    _setStatus(ConnectionStatus.connecting, "Menyambungkan ke $_deviceLabel...");
+    _setStatus(
+      ConnectionStatus.connecting,
+      "Menyambungkan ke $_deviceLabel...",
+    );
 
     try {
       await device.connect(
